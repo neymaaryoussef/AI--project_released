@@ -123,16 +123,16 @@ print(f"Logistic Regression Accuracy: {log_reg_accuracy:.4f}")
 # 2. Decision Tree
 print("Training Decision Tree...")
 dt = DecisionTreeClassifier()
-dt.fit(X_train, y_train)
-y_pred_dt = dt.predict(X_test)
+dt.fit(X_train_scaled, y_train)
+y_pred_dt = dt.predict(X_test_scaled)
 dt_accuracy = accuracy_score(y_test, y_pred_dt)
 print(f"Decision Tree Accuracy: {dt_accuracy:.4f}")
 
 # 3. Random Forest
 print("Training Random Forest...")
 rf = RandomForestClassifier(n_estimators=100)
-rf.fit(X_train, y_train)
-y_pred_rf = rf.predict(X_test)
+rf.fit(X_train_scaled, y_train)
+y_pred_rf = rf.predict(X_test_scaled)
 rf_accuracy = accuracy_score(y_test, y_pred_rf)
 print(f"Random Forest Accuracy: {rf_accuracy:.4f}")
 
@@ -174,13 +174,13 @@ random_search = RandomizedSearchCV(
 )
 
 # Fit RandomizedSearchCV
-random_search.fit(X_train, y_train)
+random_search.fit(X_train_scaled, y_train)
 
 # Get the best model
 xgb_best = random_search.best_estimator_
 
 # Evaluate on test set
-y_pred_xgb = xgb_best.predict(X_test)
+y_pred_xgb = xgb_best.predict(X_test_scaled)
 xgb_accuracy = accuracy_score(y_test, y_pred_xgb)
 
 # Print results
