@@ -22,19 +22,24 @@ class ANN(nn.Module):
         super(ANN, self).__init__()
         self.model = nn.Sequential(
             nn.Linear(input_size, 128),
+            nn.BatchNorm1d(128),
             nn.PReLU(),
             nn.Dropout(0.3),
 
             nn.Linear(128, 64),
+            nn.BatchNorm1d(64),
             nn.PReLU(),
             nn.Dropout(0.3),
 
             nn.Linear(64, 32),
+            nn.BatchNorm1d(32),
             nn.PReLU(),
             nn.Dropout(0.3),
 
             nn.Linear(32, 16),
+            nn.BatchNorm1d(16),
             nn.PReLU(),
+
             nn.Linear(16, 2)
         )
 
@@ -132,60 +137,77 @@ st.markdown("""
 st.markdown('<div class="header-container"><h1 class="header-text">✈️ Flight Satisfaction Predictor</h1></div>', unsafe_allow_html=True)
 st.markdown('<p class="subheader">Enter flight details to predict passenger satisfaction</p>', unsafe_allow_html=True)
 
-# Function to train models if not already saved
-def train_models():
-    # This is a placeholder function that would normally load your dataset and train models
-    # For this example, we'll create simple models based on the notebook
+# Function to encode categorical features
+def encode_features(gender, customer_type, travel_type, travel_class):
+    # Gender encoding: Male = 1, Female = 0
+    gender_encoded = 1 if gender == "Male" else 0
     
-    # Create dummy data similar to your notebook
-    np.random.seed(42)
-    X_dummy = np.random.rand(1000, 22)  # 22 features as seen in the notebook
-    y_dummy = np.random.randint(0, 2, 1000)  # Binary classification
+    # Customer Type encoding: Loyal = 1, Disloyal = 0
+    customer_type_encoded = 1 if customer_type == "Loyal Customer" else 0
     
-    # Train models
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X_dummy)
+    # Travel Type encoding: Business = 1, Personal = 0
+    travel_type_encoded = 1 if travel_type == "Business travel" else 0
     
-    log_reg = LogisticRegression(max_iter=1000)
-    log_reg.fit(X_scaled, y_dummy)
+    # Class encoding: Business = 2, Eco Plus = 1, Eco = 0
+    if travel_class == "Business":
+        class_encoded = 2
+    elif travel_class == "Eco Plus":
+        class_encoded = 1
+    else:
+        class_encoded = 0
     
-    dt = DecisionTreeClassifier()
-    dt.fit(X_dummy, y_dummy)
-    
-    rf = RandomForestClassifier(n_estimators=100)
-    rf.fit(X_dummy, y_dummy)
-    
-    # Save models
-    os.makedirs('models', exist_ok=True)
-    joblib.dump(scaler, 'models/scaler.pkl')
-    joblib.dump(log_reg, 'models/logistic_regression.pkl')
-    joblib.dump(dt, 'models/decision_tree.pkl')
-    joblib.dump(rf, 'models/random_forest.pkl')
-    
-    return scaler, log_reg, dt, rf
+    return gender_encoded, customer_type_encoded, travel_type_encoded, class_encoded
 
-# Load or train models
+# Load models from files
 def load_models():
     try:
+        # Check if all required model files exist
+        required_models = [
+            'models/scaler.pkl',
+            'models/logistic_regression.pkl',
+            'models/decision_tree.pkl',
+            'models/random_forest.pkl',
+            'models/xgboost.pkl'
+        ]
+        
+        missing_models = [model for model in required_models if not os.path.exists(model)]
+        if missing_models:
+            st.error(f"Missing model files: {', '.join(missing_models)}")
+            st.info("Please run extract_models.py first to extract models from the notebook.")
+            st.stop()
+            
+        # Load models
         scaler = joblib.load('models/scaler.pkl')
         log_reg = joblib.load('models/logistic_regression.pkl')
         dt = joblib.load('models/decision_tree.pkl')
         rf = joblib.load('models/random_forest.pkl')
         xgb_model = joblib.load('models/xgboost.pkl')
-    except:
-        st.info("Training models for first use...")
-        scaler, log_reg, dt, rf = train_models()
-        xgb_model = None  # XGBoost will be None if not found
-    
-    return scaler, log_reg, dt, rf, xgb_model
+        return scaler, log_reg, dt, rf, xgb_model
+    except Exception as e:
+        st.error(f"Error loading models: {str(e)}")
+        st.info("Please run extract_models.py first to extract models from the notebook.")
+        st.stop()
 
 # Load ANN model
-ann_model = ANN(input_size=22)
+# Try to get input size from feature_names if available
+input_size = 22  # Default input size
+try:
+    if os.path.exists('models/feature_names.pkl'):
+        feature_names = joblib.load('models/feature_names.pkl')
+        input_size = len(feature_names)
+except Exception as e:
+    st.warning(f"Could not load feature names: {str(e)}. Using default input size.")
+
+ann_model = ANN(input_size=input_size)
 # Set device for PyTorch
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-ann_model.load_state_dict(torch.load('models/ann_model.pth', map_location=device))
-ann_model = ann_model.to(device)
-ann_model.eval()
+try:
+    ann_model.load_state_dict(torch.load('models/ann_model.pth', map_location=device))
+    ann_model = ann_model.to(device)
+    ann_model.eval()
+except Exception as e:
+    st.error(f"Error loading ANN model: {str(e)}")
+    st.info("Please run extract_models.py first to extract models.")
 
 # Create sidebar for inputs
 st.sidebar.markdown("## Passenger Information")
@@ -220,60 +242,43 @@ checkin_service = st.sidebar.slider("Check-in Service", 1, 5, 3)
 inflight_service = st.sidebar.slider("Inflight Service", 1, 5, 3)
 cleanliness = st.sidebar.slider("Cleanliness", 1, 5, 3)
 
-# Encode categorical features
-def encode_features(gender, customer_type, travel_type, travel_class):
-    # Gender encoding: Male = 1, Female = 0
-    gender_encoded = 1 if gender == "Male" else 0
-    
-    # Customer Type encoding: Loyal = 1, Disloyal = 0
-    customer_type_encoded = 1 if customer_type == "Loyal Customer" else 0
-    
-    # Travel Type encoding: Business = 1, Personal = 0
-    travel_type_encoded = 1 if travel_type == "Business travel" else 0
-    
-    # Class encoding: Business = 2, Eco Plus = 1, Eco = 0
-    if travel_class == "Business":
-        class_encoded = 2
-    elif travel_class == "Eco Plus":
-        class_encoded = 1
-    else:
-        class_encoded = 0
-    
-    return gender_encoded, customer_type_encoded, travel_type_encoded, class_encoded
-
 # Predict function
 def predict(input_data, scaler, log_reg, dt, rf, ann_model, xgb_model=None):
-    # Scale the data for logistic regression
+    # Scale the data for all models
     input_scaled = scaler.transform([input_data])
+    input_scaled_list = input_scaled.tolist()[0]  # Convert to list for sklearn models
     
     # Set device for PyTorch
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    
+    # For ANN prediction, we need to set batch_size=1 for BatchNorm
     input_tensor = torch.FloatTensor(input_scaled).to(device)
     
-    # Make predictions
-    log_reg_pred = log_reg.predict_proba([input_data])[0]
-    dt_pred = dt.predict_proba([input_data])[0]
-    rf_pred = rf.predict_proba([input_data])[0]
+    # Make predictions using scaled data for all models
+    log_reg_pred = log_reg.predict_proba(input_scaled)[0]
+    dt_pred = dt.predict_proba(input_scaled)[0]
+    rf_pred = rf.predict_proba(input_scaled)[0]
     
-    # ANN prediction
+    # ANN prediction - handle BatchNorm properly
     ann_model.eval()
     with torch.no_grad():
+        # For BatchNorm to work with a single sample
         ann_outputs = ann_model(input_tensor)
         ann_probs = torch.softmax(ann_outputs, dim=1)
         ann_pred = ann_probs[0].cpu().numpy()
     
     # XGBoost prediction (if model is available)
     if xgb_model is not None:
-        xgb_pred = xgb_model.predict_proba([input_data])[0]
-        xgb_class = xgb_model.predict([input_data])[0]
+        xgb_pred = xgb_model.predict_proba(input_scaled)[0]
+        xgb_class = xgb_model.predict(input_scaled)[0]
     else:
         xgb_pred = np.array([0.5, 0.5])  # Default if model not available
         xgb_class = 0
     
     # Get the final predictions (1 = satisfied, 0 = dissatisfied)
-    log_reg_class = log_reg.predict([input_data])[0]
-    dt_class = dt.predict([input_data])[0]
-    rf_class = rf.predict([input_data])[0]
+    log_reg_class = log_reg.predict(input_scaled)[0]
+    dt_class = dt.predict(input_scaled)[0]
+    rf_class = rf.predict(input_scaled)[0]
     ann_class = ann_pred.argmax()
     
     # Ensemble prediction (majority voting)
